@@ -11,17 +11,20 @@ from sklearn.metrics import mutual_info_score
 
 start_scope()
 defaultclock.dt = 0.1*ms
-duration = 1*second
-time = np.arange(0, int(duration/defaultclock.dt))*defaultclock.dt
+runtime = 500*ms
+time = np.arange(0, int(runtime/defaultclock.dt))*defaultclock.dt
 
+tau = 10*ms
 eqs = '''
-dv/dt = (I - v)/(10*ms) : 1
+dv/dt = (I - v)/tau : 1 (unless refractory)
 I : 1
 '''
-N_HPC = 100
-N_PFC = 100
-HPC = NeuronGroup(N_HPC, eqs, threshold='v > 1', reset='v = 0', method ='exact')
-PFC = NeuronGroup(N_PFC, eqs, threshold='v > 1', reset='v = 0', method ='exact')
+
+n = 100
+HPC = NeuronGroup(n, eqs, threshold='v > 1', reset='v = 0', method ='exact')
+PFC = NeuronGroup(n, eqs, threshold='v > 1', reset='v = 0', method ='exact')
+HPC.v = 'rand()'
+PFC.v = 'rand()'
 
 theta = 0.5 + 0.5*np.sin(2*np.pi*6*Hz*time)
 gamma = 0.3 + 0.3*np.sin(2*np.pi*40*Hz*time)
@@ -43,7 +46,7 @@ spikemon_PFC = SpikeMonitor(PFC)
 statemon_PFC = StateMonitor(PFC, 'v', record=True)
 M_HPC = PopulationRateMonitor(HPC)
 M_PFC = PopulationRateMonitor(PFC)
-run(duration)
+run(runtime)
 
 v_data = statemon_HPC.v / volt  # Corrected unit
 vdata2 = statemon_PFC.v / volt  # Corrected unit
@@ -89,3 +92,72 @@ pfc_binned = np.digitize(rate_PFC, np.histogram(rate_PFC, bins=bins)[1])
 
 mi = mutual_info_score(hpc_binned, pfc_binned)
 print(f'Mutual Information (HPC - PFC): {mi:.3f} bits')
+
+#raster plot
+plt.figure(figsize=(12,4))
+plt.plot(spikemon_HPC.t/ms, spikemon_HPC.i, '.k', label="HPC")
+plt.plot(spikemon_PFC.t/ms, spikemon_PFC.i, '.r', label="PFC")
+plt.xlabel('Time (ms)')
+plt.ylabel('Neuron Index')
+plt.title('Raster Plot: HPC (black) + PFC (red)')
+plt.legend()
+plt.show()
+
+#spectrogram
+rate_HPC = M_HPC.smooth_rate(window='flat', width=5*ms)/Hz
+rate_PFC = M_PFC.smooth_rate(window='flat', width=5*ms)/Hz
+
+f_HPC, t_HPC, Sxx_HPC = spectrogram(rate_HPC, fs=1/(defaultclock.dt/second))
+f_PFC, t_PFC, Sxx_PFC = spectrogram(rate_PFC, fs=1/(defaultclock.dt/second))
+
+plt.figure(figsize=(12,4))
+plt.subplot(1,2,1)
+plt.pcolormesh(t_HPC*1000, f_HPC, Sxx_HPC, shading='gouraud')
+plt.ylabel('Frequency (Hz)')
+plt.xlabel('Time (ms)')
+plt.title('HPC Spectrogram')
+plt.ylim(0, 100)
+
+plt.subplot(1,2,2)
+plt.pcolormesh(t_PFC*1000, f_PFC, Sxx_PFC, shading='gouraud')
+plt.ylabel('Frequency (Hz)')
+plt.xlabel('Time (ms)')
+plt.title('PFC Spectrogram')
+plt.ylim(0, 100)
+
+plt.tight_layout()
+plt.show()
+
+#power spectrum
+f_HPC, Pxx_HPC = welch(rate_HPC, fs=1/(defaultclock.dt/second), nperseg=1024)
+f_PFC, Pxx_PFC = welch(rate_PFC, fs=1/(defaultclock.dt/second), nperseg=1024)
+
+plt.figure(figsize=(10, 4))
+plt.semilogy(f_HPC, Pxx_HPC, label='HPC')
+plt.semilogy(f_PFC, Pxx_PFC, label='PFC')
+plt.title('Power Spectrum (HPC & PFC')
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Power')
+plt.xlim(0,100)
+plt.grid(True)
+plt.legend()
+plt.show()
+
+#heatmap
+plt.figure(figsize=(12, 4))
+plt.subplot(1,2,1)
+plt.imshow(statemon_HPC.v/mV, aspect='auto', cmap='hot', extent=[statemon_HPC.t[0]/ms, statemon_HPC.t[-1]/ms, 0, n])
+plt.colorbar(label='V (mV)')
+plt.xlabel('Time (ms)')
+plt.ylabel('Neuron (HPC)')
+plt.title('HPC Heatmap')
+
+plt.subplot(1,2,2)
+plt.imshow(statemon_PFC.v/mV, aspect='auto', cmap='hot', extent=[statemon_PFC.t[0]/ms, statemon_PFC.t[-1]/ms, 0, n])
+plt.colorbar(label='V (mV)')
+plt.xlabel('Time (ms)')
+plt.ylabel('Neuron (PFC)')
+plt.title('PFC Heatmap')
+
+plt.tight_layout()
+plt.show()
