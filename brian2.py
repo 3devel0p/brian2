@@ -1,3 +1,4 @@
+#main goal is to simulate oscillations so the model needs to demonstrate that. also maybe model neural noise and refractoriness if needed?
 !pip install brian2 numpy scipy matplotlib statsmodels scikit-learn
 from brian2 import *
 import numpy as np
@@ -11,43 +12,87 @@ from sklearn.metrics import mutual_info_score
 
 start_scope()
 defaultclock.dt = 0.1*ms
-runtime = 500*ms
+runtime = 1*second
 time = np.arange(0, int(runtime/defaultclock.dt))*defaultclock.dt
+t = np.arange(0, float(runtime/ms), float(defaultclock.dt/ms)) * ms
+
+
+#oscillations (theta and gamma for hpc, all four for pfc)
+theta = 1.0*np.sin(2*np.pi*6*t/second)
+gamma = 0.5*np.sin(2*np.pi*40*t/second)
+#alpha = 0.4 + 0.4*np.sin(2*np.pi*10*Hz*time)
+#beta = 0.4 + 0.4*np.sin(2*np.pi*20*Hz*time)
+HPC_oscillations = TimedArray(theta + gamma, dt=defaultclock.dt)
+inhibitoryOscillationsHPC = TimedArray(theta, dt=defaultclock.dt)
 
 tau = 10*ms
-eqs = '''
-dv/dt = (I - v)/tau : 1 (unless refractory)
-I : 1
+eqsHPCExcitatory = '''
+dv/dt = (HPC_oscillations(t) - v)/tau : 1 (unless refractory)
+tau : second
+'''
+eqsHPCInhibitory = '''
+dv/dt = (inhibitoryOscillationsHPC(t) - v)/tau : 1 (unless refractory)
+tau : second
 '''
 
-n = 100
-HPC = NeuronGroup(n, eqs, threshold='v > 1', reset='v = 0', method ='exact')
-PFC = NeuronGroup(n, eqs, threshold='v > 1', reset='v = 0', method ='exact')
-HPC.v = 'rand()'
-PFC.v = 'rand()'
+excitatory = 100
+inhibitory = 25
+#threshold is at this value TEMPORARILY
+excitatoryHPC = NeuronGroup(excitatory, eqsHPCExcitatory, threshold='v > 1', reset='v = 0', method ='exact')
+inhibitoryHPC = NeuronGroup(inhibitory, eqsHPCInhibitory, threshold='v > 1', reset='v = 0', method ='exact')
+#the rand method ensures that the neurons aren't all the same. however after the first spike they become identical again. need synapses to fix
+excitatoryHPC.v = 'rand()'
+inhibitoryHPC.v = 'rand()'
 
-theta = 0.5 + 0.5*np.sin(2*np.pi*6*Hz*time)
-gamma = 0.3 + 0.3*np.sin(2*np.pi*40*Hz*time)
-alpha = 0.4 + 0.4*np.sin(2*np.pi*10*Hz*time)
-beta = 0.4 + 0.4*np.sin(2*np.pi*20*Hz*time)
+excitatoryHPC.tau = 20*ms
+inhibitoryHPC.tau = 10*ms
 
-hpc_input = theta + gamma
-pfc_input = alpha + beta
 
-hpc_drive = TimedArray(hpc_input, dt=defaultclock.dt)
-pfc_drive = TimedArray(pfc_input, dt=defaultclock.dt)
+#to-do: add a normal distrubution for resting, threshold, and reset voltage to simulate noise. crease synapses between excitatory and inhibitory neurons in the hpc and add plasticity. connect synapses based on distance
 
-HPC.run_regularly('I = hpc_drive(t)', dt=defaultclock.dt)
-PFC.run_regularly('I = pfc_drive(t)', dt=defaultclock.dt)
 
-spikemon_HPC = SpikeMonitor(HPC)
-statemon_HPC = StateMonitor(HPC, 'v', record=True)
-spikemon_PFC = SpikeMonitor(PFC)
-statemon_PFC = StateMonitor(PFC, 'v', record=True)
-M_HPC = PopulationRateMonitor(HPC)
-M_PFC = PopulationRateMonitor(PFC)
+#synapses (js playing around with it for now, not sure how it will really work)
+excitatoryHPCSynapse = Synapses(excitatoryHPC, excitatoryHPC, on_pre='v+=0.2')
+excitatoryHPCSynapse.connect(p=0.3)
+
+excitatoryHPCSynapse2 = Synapses(excitatoryHPC, inhibitoryHPC, on_pre='v+=0.2')
+excitatoryHPCSynapse2.connect(p=0.3)
+
+inhibitoryHPCSynapse = Synapses(inhibitoryHPC, excitatoryHPC, on_pre='v-=0.4')
+inhibitoryHPCSynapse.connect(p=0.3)
+
+inhibitoryHPCSynapse2 = Synapses(inhibitoryHPC, inhibitoryHPC, on_pre='v-=0.4')
+inhibitoryHPCSynapse2.connect(p=0.3)
+#do the same thing with pfc when added later, but also do one that connects hpc and pfc with a probability of 0.2 and voltage increase of 0.1
+#S = Synapses(HPC, HPC, 'w : 1', on_pre='v_post += w')
+#S.connect(j='k for k in range(i-3, i+4) if i!=k', skip_if_invalid=True)
+#S.w = 'exp(-(x_pre-x_post)**2/(2*width**2))'
+
+#monitors
+spikemon_HPC = SpikeMonitor(excitatoryHPC)
+statemon_HPC = StateMonitor(excitatoryHPC, 'v', record=True)
+
+M_HPC = PopulationRateMonitor(excitatoryHPC)
 run(runtime)
 
+#graphs!!!
+plt.figure(figsize=(8,4))
+for i in range (100):
+    plt.plot(statemon_HPC.t/ms, statemon_HPC.v[i], label=f'Neuron {i}')
+plt.xlabel('Time (ms)')
+plt.ylabel('Voltage (v)')
+plt.title('Voltage Traces')
+plt.legend()
+plt.show()
+
+plt.figure(figsize=(12,4))
+plt.plot(spikemon_HPC.t/ms, spikemon_HPC.i, '.k')
+plt.xlabel('Time (ms)')
+plt.ylabel('Neuron Index')
+plt.title('Spike Raster Plot')
+plt.show()
+
+'''
 v_data = statemon_HPC.v / volt  # Corrected unit
 vdata2 = statemon_PFC.v / volt  # Corrected unit
 
@@ -161,3 +206,4 @@ plt.title('PFC Heatmap')
 
 plt.tight_layout()
 plt.show()
+'''
