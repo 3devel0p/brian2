@@ -77,7 +77,7 @@ hpc.tau = 10*ms
 pfc.v = 'rand()'
 pfc.tau = 20*ms
 
-#synapses
+#synapses (maybe add inhibitory neurons to inhibit surrounding excitatory neurons. your data will still be about excitatory neurons)
 
 #hpc has stronger connections so higher synaptic weights while pfc has slower learning so lower taupre/taupost i think (find citation)
 S = Synapses(hpc, hpc, '''
@@ -359,8 +359,31 @@ print("Mutual Information Matrix (PFC):")
 print(singleRegionMI(binned_spikes2))
 
 #cognitive tasks
+#pseudocode for task switching
+#make two different poissongroup variables that represent different stimulus to the hpc that will result in different responses in the pfc
+#make hpc neurons receive one or the other and fire patterns and pfc neurons trained to respond differently based on where the hpc activity came from
+#set a trial duration and a number of trials (like 250)
+#make a loop that runs through the number of trials and presents either stimulus 1, stimulus 2, or no stimulus (depending on schedule list) and maybe appends the results to a list you can average?
+#generate task switching schedule by defining a function with parameters num_trials, switch_prob, and gap_length that contains a loop that adds 0,1, or 2 num_trials times based on whether a random 
+#number is less than the probability of switching to determine if gaps should be added (according to gap length) + the value of the current task and append it to the schedule list
+#record data by recording whether previously learned weights remain stable between tasks (record similarity between weights for relevant synapses across task phases. i.e. store weights before and after switch and calculate percent change)
+#number of trials required for the network to adjust to a new task after a switch (if response after a switch is incorrect count the number of trials until accuracy reaches criterion)
+
+#pseudocode for pattern matching
+#define the number of patterns (like 5, 40 neurons per pattern). run a loop through each pattern to assign neurons to each pattern
+#connect stimulation poissongroups with neurons with a connection parameter of j=i. create a network between the poissongroup and the synapses and run for 100ms before disconnecting.
+#show each pattern many times to strengthen synapses between the hpc neurons in the pattern and the hpc response
+#make a partial cue that is a subset of the pattern, present it, and see if the corresponding pfc neurons fire
+#record how much overlap there is between the number of true positives and the target number. also record the false positive rate
+
 
 #AD GROUP STARTS HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#disrupt oscillations/connections: impair synaptic plasticity by replacing previous synapses with new impaired ones, increase leak current/decrease excitability, progressively remove neurons
+#ad group data
+#ad group graphs/data collection
+#ad group cognitive tasks
+#ad group avg hamming distance with control group (convert neurons to array by binning spikes. two arrays will be compared)
+#calculate correlations between hamming distance and percent change of synaptic weights in tasks + number of trials needed to adjust to new task
 
 #OPEN LOOP GROUP STARTS HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #mutual info
