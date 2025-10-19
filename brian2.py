@@ -476,6 +476,7 @@ hpc_control, pfc_control, S_control, S2_control, S3_control, S4_control = create
 
 M = StateMonitor(hpc_control, 'v', record=True)
 M_PFC = StateMonitor(pfc_control, 'v', record=True)
+
 spikemon = SpikeMonitor(hpc_control)
 spikemon_pfc = SpikeMonitor(pfc_control)
 pop = PopulationRateMonitor(hpc_control)
@@ -486,7 +487,67 @@ pfc_control.v0 = 'i*v0_max_pfc/(N-1)'
 
 #run(duration)
 #data_collection(pop_pfc, pop, S, S2, S3, S4, M, M_PFC, spikemon, spikemon_pfc)
+#functions for collecting reference data for closed loop
 
+def record_lfp(statemon, lfp_buffer):
+    lfp = float(np.mean(statemon.v) / mV)
+    lfp_buffer.append(lfp)
+sliding_window = int(0.2 / dt) #window of recent lfp samples
+lfp_buffer_hpc = deque(maxlen=window_size)
+lfp_buffer_pfc = deque(maxlen=window_size)
+
+def push_lfp(lfp_sample, lfp_buffer):
+    lfp_buffer.append(lfp_sample)
+
+def amplitude(frequency, lfp_buffer): #computes amplitude depending on frequency band
+    Xc = 0.0
+    Xs = 0.0
+    for i, x in enumerate(lfp_buffer):
+        t = i * dt
+        Xc += x * math.cos(2 * math.pi * frequency * t)
+        Xs += x * math.sin(2 * math.pi * frequency * t)
+    if len(lfp_buffer) == 0:
+        return 0.0
+    return math.sqrt(Xc**2 + Xs**2)/len(lfp_buffer)
+
+window_theta = deque(maxlen=int(0.5/dt))
+window_gamma = deque(maxlen=int(0.5/dt))
+
+def push_theta_gamma(theta_phase, gamma_amp):
+    window_theta.append(theta_phase)
+    window_gamma.append(gamma_amp)
+
+def theta_gamma_coupling(): #captures theta-phase modulation of gamma amplitude
+        phase_theta = np.array(window_theta)
+        amplitude_gamma = np.array(window_gamma)
+        if len(phase_theta) == 0:
+            return 0.0
+        v = np.mean(gamma_am * np.exp(1j*theta_ph))
+        return np.abs(v) / (np.mean(gamma_am) + 1e-12)
+
+#runs the simulation to collect control data for closed loop
+t = 0*second
+alpha_power_list = []
+beta_power_list = []
+pac_list = []
+while t < duration:
+    run(dt)
+    lfp = float(np.mean(hpc_control.v)/mV)
+    lfp_buffer_hpc.append(lfp)
+    alpha_power = amplitude(10, lfp_buffer_hpc)
+    beta_power = amplitude(20, lfp_buffer_hpc)
+
+    gamma_amp = amplitude(40, lfp_buffer_hpc)
+    gamma_amp_window.append(gamma_amp)
+    theta_phase = math.atan2(sum(np.sin(2*np.pi*6*i*dt) for i in range(len(lfp_buffer_hpc))), sum(np.cos(2*np.pi*6*i*dt) for i in range(len(lfp_buffer_hpc))))
+    theta_phase_window.append(theta_phase)
+
+    pac_val = pac(theta_phase_window, gamma_amp_window)
+    alpha_power_list.append(alpha_power)
+    beta_power_list.append(beta_power)
+    pac_list.append(pac_val)
+
+    t += dt
 
 #cognitive tasks
 
@@ -582,6 +643,7 @@ trials_needed_before_correct = 0
 #OPEN LOOP GROUP STARTS HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #do NOT create new neurons and synapses because this represents the ad group with stimulation
 #inject currents to simulate open loop oscillations. come back to explain how this alleviates cognitive decline
+#graphs and cognitive tasks cannot be in the same run. do all graphs for every group first (in seperate runs, maybe like 10 seperate ones with mean for each), then do cognitive tasks for every group in seperate runs. comment out what is not needed. remember control can run with any of the ad groups
 theta = 6*Hz
 gamma = 40*Hz
 alpha = 10*Hz
@@ -601,7 +663,7 @@ I_ext = I_theta + (1 + gamma_modulation_strength*sin(theta_phase)) * I_gamma
 #alpha and beta are pfc, theta and gamma are hpc
 hpc.run_regularly('I_ext = I_theta + (1 +0.5*sin(2*pi*theta*t)) * I_gamma', dt=defaultclock.dt)
 pfc.run_regularly('I_ext = I_alpha + (1 +0.5*sin(2*pi*alpha*t)) * I_beta', dt=defaultclock.dt)
-
+ 
 #add monitors
 print("OPEN LOOP GROUP DATA")
 M_open = StateMonitor(hpc, 'v', record=True)
@@ -618,3 +680,6 @@ pop_pfc_open = PopulationRateMonitor(pfc)
 
 #CLOSED LOOP GROUP STARTS HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 #design a neuromorphic algorithm that adjusts stimulation based on parameters of the brain and biomarkers
+
+#create demodulatores for each frequency band and every 50ms get the amplitude and phase for each band and compute theta gamma coupling
+#every 50ms compute alpha/beta power and pac, then compute error (exp minus control) and update based on that
